@@ -1,0 +1,228 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  email         String   @unique
+  passwordHash  String
+  createdAt     DateTime @default(now())
+
+  habits         Habit[]
+  goals          Goal[]
+  prayerLogs     PrayerLog[]
+  workoutLogs    WorkoutLog[]
+  hashishState   HashishState?
+  hashishDayLogs HashishDayLog[]
+  sleepLogs      SleepLog[]
+  quranState     QuranState?
+  quranLogs      QuranLog[]
+  projects       Project[]
+  recoveryState  RecoveryState?
+  recoveryLogs   RecoveryLog[]
+  recoveryUrges  RecoveryUrge[]
+  athkarLogs     AthkarLog[]
+}
+
+model Habit {
+  id        String   @id
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  category  String
+  frequency String
+  streak    Int      @default(0)
+  createdAt DateTime @default(now())
+
+  completions HabitCompletion[]
+}
+
+model HabitCompletion {
+  id      Int    @id @default(autoincrement())
+  habitId String
+  habit   Habit  @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  date    String
+
+  @@unique([habitId, date])
+}
+
+model Goal {
+  id          String @id
+  userId      Int
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String @default("")
+  category    String
+  deadline    String
+  progress    Int    @default(0)
+
+  tasks Task[]
+}
+
+model Task {
+  id        String  @id
+  goalId    String
+  goal      Goal    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  title     String
+  completed Boolean @default(false)
+}
+
+model PrayerLog {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date             String
+  completedPrayers String[]
+
+  @@unique([userId, date])
+}
+
+model WorkoutLog {
+  id        Int    @id @default(autoincrement())
+  userId    Int
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String
+  type      String
+  duration  Int
+  intensity String
+
+  @@unique([userId, date])
+}
+
+model HashishState {
+  id             Int     @id @default(autoincrement())
+  userId         Int     @unique
+  user           User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate      String
+  cleanStartDate String?
+  longestStreak  Int     @default(0)
+  currentGoal    Int     @default(7)
+}
+
+model HashishDayLog {
+  id               Int     @id @default(autoincrement())
+  userId           Int
+  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date             String
+  count            Int     @default(0)
+  smokedDuringWork Boolean @default(false)
+
+  attacks HashishAttack[]
+
+  @@unique([userId, date])
+}
+
+model HashishAttack {
+  id       String        @id
+  dayLogId Int
+  dayLog   HashishDayLog @relation(fields: [dayLogId], references: [id], onDelete: Cascade)
+  time     String
+  activity String
+  reason   String
+  result   String
+}
+
+model SleepLog {
+  id        Int    @id @default(autoincrement())
+  userId    Int
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String  // yyyy-MM-dd (wake date)
+  sleepTime String  // HH:mm
+  wakeTime  String  // HH:mm
+  duration  Float   // hours
+
+  @@unique([userId, date])
+}
+
+model QuranState {
+  id              Int     @id @default(autoincrement())
+  userId          Int     @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  khatmaStartDate String
+  khatmaGoalDays  Int     @default(300)
+  streak          Int     @default(0)
+}
+
+model QuranLog {
+  id         String   @id
+  userId     Int
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date       String
+  pagesRead  Int
+
+  @@unique([userId, date])
+}
+
+model Project {
+  id           String        @id
+  userId       Int
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  status       String        @default("active") 
+  progress     Int           @default(0)
+  lastActivity String        
+  targetGoal   String?
+  currentStage String?
+  tasks        ProjectTask[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model ProjectTask {
+  id        String  @id
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  completed Boolean @default(false)
+  isTopTask Boolean @default(false)
+}
+
+model RecoveryState {
+  userId          Int     @id @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startDate       String
+  cleanStartDate  String?
+  longestStreak   Int     @default(0)
+  currentGoal     Int     @default(7)
+}
+
+model RecoveryLog {
+  id            String   @id @default(cuid())
+  userId        Int
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date          String   // yyyy-MM-dd
+  pressureLevel String   // low, medium, high
+  isClean       Boolean  @default(true)
+
+  @@unique([userId, date])
+}
+
+model RecoveryUrge {
+  id              String   @id @default(cuid())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date            String   // yyyy-MM-dd
+  time            String   // HH:mm
+  reason          String   // work, failure, discussion, fatigue
+  intensity       Int      // 1-5
+  alternativeUsed String?  // walk, breath, shower, quran, sports
+  createdAt       DateTime @default(now())
+}
+
+model AthkarLog {
+  id               Int      @id @default(autoincrement())
+  userId           Int
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date             String
+  morningCompleted Boolean  @default(false)
+  eveningCompleted Boolean  @default(false)
+  counts           Json     // { "thkerId": count }
+
+  @@unique([userId, date])
+}
+
