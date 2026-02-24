@@ -5,7 +5,10 @@ import { getToken } from "next-auth/jwt"
 export async function middleware(req: NextRequest) {
   const token = await getToken({ req })
 
-  if (!token && !req.nextUrl.pathname.startsWith("/login")) {
+  const isAuthPage = req.nextUrl.pathname.startsWith("/login")
+  const isApiAuth = req.nextUrl.pathname.startsWith("/api/auth")
+
+  if (!token && !isAuthPage && !isApiAuth) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
@@ -14,6 +17,6 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 }
