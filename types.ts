@@ -130,6 +130,7 @@ export interface ProjectTask {
   title: string;
   completed: boolean;
   isTopTask: boolean;
+  position: number;
 }
 
 export interface Project {

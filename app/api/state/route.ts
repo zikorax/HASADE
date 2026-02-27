@@ -142,6 +142,7 @@ export async function GET() {
         title: t.title,
         completed: t.completed,
         isTopTask: t.isTopTask,
+        position: t.position,
       }))
     })),
     recoveryState: recoveryState
@@ -465,6 +466,7 @@ export async function PUT(request: NextRequest) {
             title: task.title,
             completed: task.completed,
             isTopTask: task.isTopTask,
+            position: task.position,
           },
           create: {
             id: task.id,
@@ -472,6 +474,7 @@ export async function PUT(request: NextRequest) {
             title: task.title,
             completed: task.completed,
             isTopTask: task.isTopTask,
+            position: task.position,
           },
         })
       }

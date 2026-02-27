@@ -14,7 +14,10 @@ export function ProjectsClient() {
         deleteProject,
         addProjectTask,
         toggleProjectTask,
-        deleteProjectTask
+        deleteProjectTask,
+        updateProjectTask,
+        reorderProjectTasks,
+        moveProjectTask
     } = useUserState()
 
     if (loading) {
@@ -34,6 +37,9 @@ export function ProjectsClient() {
             onAddTask={addProjectTask}
             onToggleTask={toggleProjectTask}
             onDeleteTask={deleteProjectTask}
+            onUpdateTask={updateProjectTask}
+            onReorderTasks={reorderProjectTasks}
+            onMoveTask={moveProjectTask}
         />
     )
 }

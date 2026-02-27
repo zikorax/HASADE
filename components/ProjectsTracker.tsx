@@ -2,9 +2,26 @@
 
 import React, { useState } from 'react'
 import { Project, ProjectTask } from '@/types'
-import { Plus, Target, Clock, CheckCircle2, ChevronLeft, ChevronRight, Layers, Trash2, LayoutGrid, AlertTriangle } from 'lucide-react'
+import { Plus, Target, Clock, CheckCircle2, ChevronLeft, ChevronRight, Layers, Trash2, LayoutGrid, AlertTriangle, Edit2, Check, X, ArrowUp, ArrowDown, GripVertical } from 'lucide-react'
 import { format, differenceInDays, parseISO } from 'date-fns'
 import { ar } from 'date-fns/locale'
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    verticalListSortingStrategy,
+    useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface ProjectsTrackerProps {
     projects: Project[]
@@ -14,6 +31,9 @@ interface ProjectsTrackerProps {
     onAddTask: (projectId: string, task: ProjectTask) => void
     onToggleTask: (projectId: string, taskId: string) => void
     onDeleteTask: (projectId: string, taskId: string) => void
+    onUpdateTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void
+    onReorderTasks: (projectId: string, taskId: string, direction: 'up' | 'down') => void
+    onMoveTask: (projectId: string, activeId: string, overId: string) => void
 }
 
 export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
@@ -23,7 +43,10 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
     onDeleteProject,
     onAddTask,
     onToggleTask,
-    onDeleteTask
+    onDeleteTask,
+    onUpdateTask,
+    onReorderTasks,
+    onMoveTask
 }) => {
     const [activeProject, setActiveProject] = useState<string | null>(null)
     const [showAddProject, setShowAddProject] = useState(false)
@@ -56,6 +79,9 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
                     onAddTask={onAddTask}
                     onToggleTask={onToggleTask}
                     onDeleteTask={onDeleteTask}
+                    onUpdateTask={onUpdateTask}
+                    onReorderTasks={onReorderTasks}
+                    onMoveTask={onMoveTask}
                 />
             )
         }
@@ -190,7 +216,104 @@ interface ProjectDetailProps {
     onAddTask: (projectId: string, task: ProjectTask) => void
     onToggleTask: (projectId: string, taskId: string) => void
     onDeleteTask: (projectId: string, taskId: string) => void
+    onUpdateTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void
+    onReorderTasks: (projectId: string, taskId: string, direction: 'up' | 'down') => void
+    onMoveTask: (projectId: string, activeId: string, overId: string) => void
 }
+
+interface SortableTaskItemProps {
+    task: ProjectTask;
+    projectId: string;
+    isEditing: boolean;
+    editTaskTitle: string;
+    setEditTaskTitle: (title: string) => void;
+    onSaveTaskEdit: (taskId: string) => void;
+    onCancelEdit: () => void;
+    onStartEdit: (task: ProjectTask) => void;
+    onToggleTask: (projectId: string, taskId: string) => void;
+    onDeleteTask: (projectId: string, taskId: string) => void;
+    onUpdateProject: (projectId: string, updates: any) => void;
+}
+
+const SortableTaskItem = (props: SortableTaskItemProps) => {
+    const { task, projectId, isEditing, editTaskTitle, setEditTaskTitle, onSaveTaskEdit, onCancelEdit, onStartEdit, onToggleTask, onDeleteTask, onUpdateProject } = props;
+
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging
+    } = useSortable({ id: task.id });
+
+    const style = {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        zIndex: isDragging ? 50 : undefined,
+    };
+
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={`group flex items-center justify-between p-4 rounded-2xl border transition-all ${isDragging ? 'opacity-50 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xl bg-white scale-[1.02]' : (task.isTopTask ? 'bg-indigo-50/50 border-indigo-200' : 'bg-white border-slate-100 hover:border-slate-300')}`}
+        >
+            <div className="flex items-center gap-4 flex-1">
+                <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-500 rounded transition-colors">
+                    <GripVertical size={20} />
+                </div>
+                <button
+                    onClick={() => {
+                        onToggleTask(projectId, task.id)
+                        onUpdateProject(projectId, { lastActivity: new Date().toISOString() })
+                    }}
+                    className={`w-6 h-6 rounded-full border-2 transition-colors shrink-0 flex items-center justify-center ${task.completed ? 'bg-emerald-500 border-emerald-500' : 'border-slate-300 hover:border-emerald-500 hover:bg-emerald-50'}`}
+                >
+                    {task.completed && <Check size={14} className="text-white" />}
+                </button>
+                <div className="flex-1">
+                    {task.isTopTask && <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block mb-1">المهمة الأهم</span>}
+                    {isEditing ? (
+                        <div className="flex items-center gap-2">
+                            <input
+                                autoFocus
+                                type="text"
+                                value={editTaskTitle}
+                                onChange={e => setEditTaskTitle(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && onSaveTaskEdit(task.id)}
+                                className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 font-bold text-slate-800 focus:outline-none"
+                            />
+                            <button onClick={() => onSaveTaskEdit(task.id)} className="p-1 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
+                                <Check size={18} />
+                            </button>
+                            <button onClick={onCancelEdit} className="p-1 text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X size={18} />
+                            </button>
+                        </div>
+                    ) : (
+                        <span className={`font-bold ${task.isTopTask ? 'text-indigo-900' : 'text-slate-700'}`}>{task.title}</span>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                <button
+                    onClick={() => onStartEdit(task)}
+                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
+                >
+                    <Edit2 size={16} />
+                </button>
+                <button
+                    onClick={() => onDeleteTask(projectId, task.id)}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                >
+                    <Trash2 size={16} />
+                </button>
+            </div>
+        </div>
+    );
+};
 
 const ProjectDetail: React.FC<ProjectDetailProps> = ({
     project,
@@ -199,10 +322,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     onDeleteProject,
     onAddTask,
     onToggleTask,
-    onDeleteTask
+    onDeleteTask,
+    onUpdateTask,
+    onReorderTasks,
+    onMoveTask
 }) => {
-    const pendingTasks = project.tasks.filter(t => !t.completed)
-    const completedTasks = project.tasks.filter(t => t.completed)
+    const sortedTasks = [...project.tasks].sort((a, b) => a.position - b.position)
+    const pendingTasks = sortedTasks.filter(t => !t.completed)
+    const completedTasks = sortedTasks.filter(t => t.completed)
 
     const [newTaskTitle, setNewTaskTitle] = useState('')
     const [editGoal, setEditGoal] = useState(false)
@@ -210,6 +337,29 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     const [editStage, setEditStage] = useState(false)
     const [stageInput, setStageInput] = useState(project.currentStage || '')
     const [showDeleteModal, setShowDeleteModal] = useState(false)
+
+    // Editing task state
+    const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+    const [editTaskTitle, setEditTaskTitle] = useState('')
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (over && active.id !== over.id) {
+            onMoveTask(project.id, active.id as string, over.id as string);
+            onUpdateProject(project.id, { lastActivity: new Date().toISOString() })
+        }
+    };
 
     const handleSaveGoal = () => {
         onUpdateProject(project.id, { targetGoal: goalInput, lastActivity: new Date().toISOString() })
@@ -228,9 +378,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
             projectId: project.id,
             title: newTaskTitle,
             completed: false,
-            isTopTask: false
+            isTopTask: false,
+            position: project.tasks.length
         })
         setNewTaskTitle('')
+        onUpdateProject(project.id, { lastActivity: new Date().toISOString() })
+    }
+
+    const handleSaveTaskEdit = (taskId: string) => {
+        if (!editTaskTitle.trim()) return;
+        onUpdateTask(project.id, taskId, { title: editTaskTitle })
+        setEditingTaskId(null)
         onUpdateProject(project.id, { lastActivity: new Date().toISOString() })
     }
 
@@ -368,32 +526,36 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                 </div>
 
                 <div className="space-y-3">
-                    {pendingTasks.map((task) => (
-                        <div
-                            key={task.id}
-                            className={`group flex items-center justify-between p-4 rounded-2xl border transition-all ${task.isTopTask ? 'bg-indigo-50/50 border-indigo-200' : 'bg-white border-slate-100 hover:border-slate-300'}`}
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                    >
+                        <SortableContext
+                            items={pendingTasks.map(t => t.id)}
+                            strategy={verticalListSortingStrategy}
                         >
-                            <div className="flex items-center gap-4">
-                                <button
-                                    onClick={() => {
-                                        onToggleTask(project.id, task.id)
-                                        onUpdateProject(project.id, { lastActivity: new Date().toISOString() })
+                            {pendingTasks.map((task) => (
+                                <SortableTaskItem
+                                    key={task.id}
+                                    task={task}
+                                    projectId={project.id}
+                                    isEditing={editingTaskId === task.id}
+                                    editTaskTitle={editTaskTitle}
+                                    setEditTaskTitle={setEditTaskTitle}
+                                    onSaveTaskEdit={handleSaveTaskEdit}
+                                    onCancelEdit={() => setEditingTaskId(null)}
+                                    onStartEdit={(t) => {
+                                        setEditingTaskId(t.id)
+                                        setEditTaskTitle(t.title)
                                     }}
-                                    className="w-6 h-6 rounded-full border-2 border-slate-300 hover:border-emerald-500 hover:bg-emerald-50 transition-colors shrink-0"
+                                    onToggleTask={onToggleTask}
+                                    onDeleteTask={onDeleteTask}
+                                    onUpdateProject={onUpdateProject}
                                 />
-                                <div>
-                                    {task.isTopTask && <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest block mb-1">المهمة الأهم</span>}
-                                    <span className={`font-bold ${task.isTopTask ? 'text-indigo-900' : 'text-slate-700'}`}>{task.title}</span>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => onDeleteTask(project.id, task.id)}
-                                className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all px-2"
-                            >
-                                <Trash2 size={16} />
-                            </button>
-                        </div>
-                    ))}
+                            ))}
+                        </SortableContext>
+                    </DndContext>
 
                     <div className="flex items-center gap-3 p-2 mt-4">
                         <input

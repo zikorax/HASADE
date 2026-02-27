@@ -451,6 +451,8 @@ export function useUserState() {
           if (updatedTasks.length === 0) {
             task.isTopTask = true;
           }
+          // Set position based on current task count
+          task.position = updatedTasks.length;
           updatedTasks.push(task);
 
           return { ...p, tasks: updatedTasks };
@@ -508,13 +510,18 @@ export function useUserState() {
           if (p.id !== projectId) return p;
 
           const taskToDelete = p.tasks.find(t => t.id === taskId);
-          const updatedTasks = p.tasks.filter(t => t.id !== taskId);
+          let updatedTasks = p.tasks.filter(t => t.id !== taskId);
 
           // Re-assign top task if we deleted the top task
           if (taskToDelete?.isTopTask) {
             const nextTask = updatedTasks.find(t => !t.completed);
             if (nextTask) nextTask.isTopTask = true;
           }
+
+          // Normalize positions
+          updatedTasks = updatedTasks
+            .sort((a, b) => a.position - b.position)
+            .map((t, idx) => ({ ...t, position: idx }));
 
           // Re-calculate progress
           const totalTasks = updatedTasks.length;
@@ -527,6 +534,90 @@ export function useUserState() {
     },
     [update]
   )
+
+  const updateProjectTask = useCallback(
+    (projectId: string, taskId: string, updates: Partial<ProjectTask>) => {
+      update((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => {
+          if (p.id !== projectId) return p;
+          return {
+            ...p,
+            tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+          };
+        }),
+      }));
+    },
+    [update]
+  );
+
+  const reorderProjectTasks = useCallback(
+    (projectId: string, taskId: string, direction: 'up' | 'down') => {
+      update((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => {
+          if (p.id !== projectId) return p;
+
+          const tasks = [...p.tasks].sort((a, b) => a.position - b.position);
+          const idx = tasks.findIndex((t) => t.id === taskId);
+          if (idx === -1) return p;
+
+          const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+          if (newIdx < 0 || newIdx >= tasks.length) return p;
+
+          // Swap positions
+          const temp = tasks[idx].position;
+          tasks[idx].position = tasks[newIdx].position;
+          tasks[newIdx].position = temp;
+
+          // Resort
+          const sortedTasks = tasks.sort((a, b) => a.position - b.position);
+
+          // Update isTopTask - top task should be the first uncompleted task in the new order
+          const updatedTasks = sortedTasks.map(t => ({ ...t, isTopTask: false }));
+          const firstUncompleted = updatedTasks.find(t => !t.completed);
+          if (firstUncompleted) firstUncompleted.isTopTask = true;
+
+          return { ...p, tasks: updatedTasks };
+        }),
+      }));
+    },
+    [update]
+  );
+
+  const moveProjectTask = useCallback(
+    (projectId: string, activeId: string, overId: string) => {
+      update((prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) => {
+          if (p.id !== projectId) return p;
+
+          const tasks = [...p.tasks].sort((a, b) => a.position - b.position);
+          const oldIndex = tasks.findIndex((t) => t.id === activeId);
+          const newIndex = tasks.findIndex((t) => t.id === overId);
+
+          if (oldIndex === -1 || newIndex === -1) return p;
+
+          // Perform move
+          const [movedTask] = tasks.splice(oldIndex, 1);
+          tasks.splice(newIndex, 0, movedTask);
+
+          // Re-assign positions and update top task
+          const updatedTasks = tasks.map((t, idx) => ({
+            ...t,
+            position: idx,
+            isTopTask: false
+          }));
+
+          const firstUncompleted = updatedTasks.find(t => !t.completed);
+          if (firstUncompleted) firstUncompleted.isTopTask = true;
+
+          return { ...p, tasks: updatedTasks };
+        }),
+      }));
+    },
+    [update]
+  );
 
   // ── Recovery helpers ────────────────────────────────────────────────────────
 
@@ -620,6 +711,9 @@ export function useUserState() {
     addProjectTask,
     toggleProjectTask,
     deleteProjectTask,
+    updateProjectTask,
+    reorderProjectTasks,
+    moveProjectTask,
     // recovery
     saveRecoveryLog,
     addRecoveryUrge,

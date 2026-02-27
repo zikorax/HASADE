@@ -180,6 +180,7 @@ model ProjectTask {
   title     String
   completed Boolean @default(false)
   isTopTask Boolean @default(false)
+  position  Int     @default(0)
 }
 
 model RecoveryState {
