@@ -13,7 +13,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         // Dynamically import to avoid edge runtime issues in middleware
         const { prisma } = await import('@/lib/prisma')
-        const bcrypt = await import('bcryptjs')
+        const bcrypt = (await import('bcryptjs')).default
 
         const email = credentials.email as string
         const password = credentials.password as string

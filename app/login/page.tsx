@@ -2,17 +2,15 @@
 
 import React, { useState } from 'react'
 import { signIn } from 'next-auth/react'
-import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     setError('')
     setLoading(true)
@@ -39,17 +37,9 @@ export default function LoginPage() {
       const result = await signIn('credentials', {
         email,
         password,
-        redirect: false,
+        redirect: true,
+        callbackUrl: '/dashboard',
       })
-
-      if (result?.error) {
-        setError('بيانات الدخول غير صحيحة')
-        setLoading(false)
-        return
-      }
-
-      router.push('/dashboard')
-      router.refresh()
     } catch (err) {
       setError('حدث خطأ في الاتصال')
       setLoading(false)
