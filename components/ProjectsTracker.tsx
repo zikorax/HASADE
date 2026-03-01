@@ -2,8 +2,9 @@
 
 import React, { useState } from 'react'
 import { Project, ProjectTask } from '@/types'
-import { Plus, Target, Clock, CheckCircle2, ChevronLeft, ChevronRight, Layers, Trash2, LayoutGrid, AlertTriangle, Edit2, Check, X, ArrowUp, ArrowDown, GripVertical } from 'lucide-react'
+import { Plus, Target, Clock, CheckCircle2, ChevronLeft, ChevronRight, Layers, Trash2, LayoutGrid, AlertTriangle, Edit2, Check, X, ArrowUp, ArrowDown, GripVertical, Repeat } from 'lucide-react'
 import { format, differenceInDays, parseISO } from 'date-fns'
+import { PomodoroTimer } from './PomodoroTimer'
 import { ar } from 'date-fns/locale'
 import {
     DndContext,
@@ -232,11 +233,14 @@ interface SortableTaskItemProps {
     onStartEdit: (task: ProjectTask) => void;
     onToggleTask: (projectId: string, taskId: string) => void;
     onDeleteTask: (projectId: string, taskId: string) => void;
+    onUpdateTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void;
     onUpdateProject: (projectId: string, updates: any) => void;
+    isActiveTimer?: boolean;
+    onSetAsTimer?: () => void;
 }
 
 const SortableTaskItem = (props: SortableTaskItemProps) => {
-    const { task, projectId, isEditing, editTaskTitle, setEditTaskTitle, onSaveTaskEdit, onCancelEdit, onStartEdit, onToggleTask, onDeleteTask, onUpdateProject } = props;
+    const { task, projectId, isEditing, editTaskTitle, setEditTaskTitle, onSaveTaskEdit, onCancelEdit, onStartEdit, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject, isActiveTimer, onSetAsTimer } = props;
 
     const {
         attributes,
@@ -257,8 +261,9 @@ const SortableTaskItem = (props: SortableTaskItemProps) => {
         <div
             ref={setNodeRef}
             style={style}
-            className={`group flex items-center justify-between p-4 rounded-2xl border transition-all ${isDragging ? 'opacity-50 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xl bg-white scale-[1.02]' : (task.isTopTask ? 'bg-indigo-50/50 border-indigo-200' : 'bg-white border-slate-100 hover:border-slate-300')}`}
+            className={`group flex items-center justify-between p-4 rounded-2xl border transition-all ${isDragging ? 'opacity-50 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xl bg-white scale-[1.02]' : (isActiveTimer ? 'bg-indigo-50/80 border-indigo-300 ring-1 ring-indigo-300 shadow-sm relative overflow-hidden' : (task.isTopTask ? 'bg-indigo-50/40 border-indigo-200' : 'bg-white border-slate-100 hover:border-slate-300'))}`}
         >
+            {isActiveTimer && <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />}
             <div className="flex items-center gap-4 flex-1">
                 <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-500 rounded transition-colors">
                     <GripVertical size={20} />
@@ -292,12 +297,53 @@ const SortableTaskItem = (props: SortableTaskItemProps) => {
                             </button>
                         </div>
                     ) : (
-                        <span className={`font-bold ${task.isTopTask ? 'text-indigo-900' : 'text-slate-700'}`}>{task.title}</span>
+                        <span className={`font-bold ${task.isTopTask || isActiveTimer ? 'text-indigo-900' : 'text-slate-700'}`}>{task.title}</span>
                     )}
                 </div>
             </div>
 
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                {((task.pomodoroCount || 0) > 0 || (task.totalSeconds || 0) > 0) && (
+                    <div className="flex items-center gap-2 mr-2">
+                        {(task.pomodoroCount || 0) > 0 && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100" title="جلسات بومودورو">
+                                <Target size={10} />
+                                {task.pomodoroCount}
+                            </span>
+                        )}
+                        {(task.totalSeconds || 0) > 0 && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100" title="إجمالي الدقائق">
+                                <Clock size={10} />
+                                {Math.floor((task.totalSeconds || 0) / 60)}د
+                            </span>
+                        )}
+                    </div>
+                )}
+                {!task.completed && onSetAsTimer && (
+                    <button
+                        onClick={onSetAsTimer}
+                        title="بدء مؤقت بومودورو"
+                        className={`p-2 rounded-xl transition-colors ${isActiveTimer ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:bg-indigo-50 hover:text-indigo-500'}`}
+                    >
+                        <Clock size={16} />
+                    </button>
+                )}
+                {task.pomodoroCount !== undefined && task.pomodoroCount > 0 && (
+                    <span className="flex items-center gap-1 text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg" title="جلسات بومودورو مكتملة">
+                        <Target size={12} className="text-indigo-400" />
+                        {task.pomodoroCount}
+                    </span>
+                )}
+                <button
+                    onClick={() => {
+                        onUpdateProject(projectId, { lastActivity: new Date().toISOString() })
+                        onUpdateTask(projectId, task.id, { isTopTask: !task.isTopTask })
+                    }}
+                    title={task.isTopTask ? 'إلغاء كمهمة أهم' : 'تعيين كمهمة أهم'}
+                    className={`p-2 rounded-xl transition-colors ${task.isTopTask ? 'text-amber-500 bg-amber-50' : 'text-slate-400 hover:bg-slate-100 hover:text-amber-500'}`}
+                >
+                    <ArrowUp size={16} />
+                </button>
                 <button
                     onClick={() => onStartEdit(task)}
                     className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
@@ -328,10 +374,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     onMoveTask
 }) => {
     const sortedTasks = [...project.tasks].sort((a, b) => a.position - b.position)
-    const pendingTasks = sortedTasks.filter(t => !t.completed)
-    const completedTasks = sortedTasks.filter(t => t.completed)
+    const pendingTasks = sortedTasks.filter(t => !t.completed && (!t.recurrence || t.recurrence === 'none'))
+    const completedTasks = sortedTasks.filter(t => t.completed && (!t.recurrence || t.recurrence === 'none'))
+    const dailyTasks = sortedTasks.filter(t => t.recurrence === 'daily')
+    const monthlyTasks = sortedTasks.filter(t => t.recurrence === 'monthly')
 
     const [newTaskTitle, setNewTaskTitle] = useState('')
+    const [newTaskRecurrence, setNewTaskRecurrence] = useState<'none' | 'daily' | 'monthly'>('none')
     const [editGoal, setEditGoal] = useState(false)
     const [goalInput, setGoalInput] = useState(project.targetGoal || '')
     const [editStage, setEditStage] = useState(false)
@@ -341,6 +390,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     // Editing task state
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
     const [editTaskTitle, setEditTaskTitle] = useState('')
+
+    // Active timer task
+    const [activeTimerTaskId, setActiveTimerTaskId] = useState<string | null>(null)
+    const [showTimerModal, setShowTimerModal] = useState(false)
+    const defaultTimerTask = pendingTasks.find(t => t.isTopTask) || pendingTasks[0]
+    const effectiveTimerTaskId = activeTimerTaskId || defaultTimerTask?.id
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -379,9 +434,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
             title: newTaskTitle,
             completed: false,
             isTopTask: false,
-            position: project.tasks.length
+            position: project.tasks.length,
+            recurrence: newTaskRecurrence,
+            lastCompletedDate: undefined
         })
         setNewTaskTitle('')
+        setNewTaskRecurrence('none')
         onUpdateProject(project.id, { lastActivity: new Date().toISOString() })
     }
 
@@ -449,6 +507,47 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                 إلغاء
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Pomodoro Timer Modal */}
+            {showTimerModal && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
+                    <div className="relative w-full max-w-sm">
+                        <button
+                            title="إغلاق المؤقت"
+                            onClick={() => setShowTimerModal(false)}
+                            className="absolute -top-12 right-0 text-white/70 hover:text-white transition-colors"
+                        >
+                            <X size={28} />
+                        </button>
+                        <PomodoroTimer
+                            pomodorosCompleted={project.pomodoroCount || 0}
+                            autoStart={true}
+                            taskTitle={effectiveTimerTaskId ? (pendingTasks.find(t => t.id === effectiveTimerTaskId) || dailyTasks.find(t => t.id === effectiveTimerTaskId) || monthlyTasks.find(t => t.id === effectiveTimerTaskId))?.title : undefined}
+                            onTick={(seconds) => {
+                                if (effectiveTimerTaskId) {
+                                    const task = pendingTasks.find(t => t.id === effectiveTimerTaskId) || dailyTasks.find(t => t.id === effectiveTimerTaskId) || monthlyTasks.find(t => t.id === effectiveTimerTaskId);
+                                    if (task) {
+                                        onUpdateTask(project.id, task.id, {
+                                            totalSeconds: (task.totalSeconds || 0) + seconds
+                                        });
+                                    }
+                                }
+                            }}
+                            onSessionComplete={() => {
+                                onUpdateProject(project.id, { pomodoroCount: (project.pomodoroCount || 0) + 1, lastActivity: new Date().toISOString() });
+                                if (effectiveTimerTaskId) {
+                                    const task = pendingTasks.find(t => t.id === effectiveTimerTaskId) || dailyTasks.find(t => t.id === effectiveTimerTaskId) || monthlyTasks.find(t => t.id === effectiveTimerTaskId);
+                                    if (task) {
+                                        onUpdateTask(project.id, task.id, {
+                                            pomodoroCount: (task.pomodoroCount || 0) + 1
+                                        });
+                                    }
+                                }
+                            }}
+                        />
                     </div>
                 </div>
             )}
@@ -551,41 +650,173 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                     }}
                                     onToggleTask={onToggleTask}
                                     onDeleteTask={onDeleteTask}
+                                    onUpdateTask={onUpdateTask}
                                     onUpdateProject={onUpdateProject}
+                                    isActiveTimer={effectiveTimerTaskId === task.id}
+                                    onSetAsTimer={() => {
+                                        setActiveTimerTaskId(task.id);
+                                        setShowTimerModal(true);
+                                    }}
                                 />
                             ))}
                         </SortableContext>
                     </DndContext>
 
-                    <div className="flex items-center gap-3 p-2 mt-4">
-                        <input
-                            type="text"
-                            value={newTaskTitle}
-                            onChange={e => setNewTaskTitle(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleAddTask()}
-                            placeholder="ما هي المهمة التالية..."
-                            className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-slate-400 focus:bg-white transition-all"
-                        />
-                        <button
-                            onClick={handleAddTask}
-                            disabled={!newTaskTitle.trim()}
-                            className="bg-slate-900 text-white w-12 h-12 rounded-xl flex items-center justify-center hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-900 transition-colors"
-                        >
-                            <Plus size={20} />
-                        </button>
+                    <div className="flex flex-col gap-2 p-2 mt-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="text"
+                                value={newTaskTitle}
+                                onChange={e => setNewTaskTitle(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleAddTask()}
+                                placeholder="ما هي المهمة التالية..."
+                                className="flex-1 bg-transparent px-4 py-3 font-bold text-slate-700 placeholder:text-slate-400 focus:outline-none transition-all"
+                            />
+                            <button
+                                onClick={handleAddTask}
+                                disabled={!newTaskTitle.trim()}
+                                className="bg-slate-900 text-white w-12 h-12 rounded-xl flex items-center justify-center hover:bg-slate-800 disabled:opacity-30 disabled:hover:bg-slate-900 transition-colors shrink-0"
+                            >
+                                <Plus size={20} />
+                            </button>
+                        </div>
+                        <div className="flex items-center gap-2 px-4 pb-3">
+                            <button
+                                onClick={() => setNewTaskRecurrence('none')}
+                                className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${newTaskRecurrence === 'none' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-200'}`}
+                            >
+                                مرة واحدة
+                            </button>
+                            <button
+                                onClick={() => setNewTaskRecurrence('daily')}
+                                className={`flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${newTaskRecurrence === 'daily' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-200'}`}
+                            >
+                                <Repeat size={12} />
+                                يومياً
+                            </button>
+                            <button
+                                onClick={() => setNewTaskRecurrence('monthly')}
+                                className={`flex items-center gap-1 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${newTaskRecurrence === 'monthly' ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-200'}`}
+                            >
+                                <Repeat size={12} />
+                                شهرياً
+                            </button>
+                        </div>
                     </div>
                 </div>
+
+                {/* Recurring Tasks sections */}
+                {(dailyTasks.length > 0 || monthlyTasks.length > 0) && (
+                    <div className="mt-8 pt-8 border-t border-slate-100 space-y-8">
+                        {dailyTasks.length > 0 && (
+                            <div>
+                                <h4 className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-4">
+                                    <Repeat size={16} className="text-indigo-500" />
+                                    عادات ومهام يومية
+                                </h4>
+                                <div className="space-y-2">
+                                    {dailyTasks.map((task) => (
+                                        <SortableTaskItem
+                                            key={task.id}
+                                            task={task}
+                                            projectId={project.id}
+                                            isEditing={editingTaskId === task.id}
+                                            editTaskTitle={editTaskTitle}
+                                            setEditTaskTitle={setEditTaskTitle}
+                                            onSaveTaskEdit={handleSaveTaskEdit}
+                                            onCancelEdit={() => setEditingTaskId(null)}
+                                            onStartEdit={(t) => {
+                                                setEditingTaskId(t.id)
+                                                setEditTaskTitle(t.title)
+                                            }}
+                                            onToggleTask={onToggleTask}
+                                            onDeleteTask={onDeleteTask}
+                                            onUpdateTask={onUpdateTask}
+                                            onUpdateProject={onUpdateProject}
+                                            isActiveTimer={effectiveTimerTaskId === task.id}
+                                            onSetAsTimer={() => {
+                                                setActiveTimerTaskId(task.id);
+                                                setShowTimerModal(true);
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {monthlyTasks.length > 0 && (
+                            <div>
+                                <h4 className="flex items-center gap-2 text-sm font-bold text-slate-800 mb-4">
+                                    <Repeat size={16} className="text-indigo-500" />
+                                    أهداف ومهام شهرية
+                                </h4>
+                                <div className="space-y-2">
+                                    {monthlyTasks.map((task) => (
+                                        <SortableTaskItem
+                                            key={task.id}
+                                            task={task}
+                                            projectId={project.id}
+                                            isEditing={editingTaskId === task.id}
+                                            editTaskTitle={editTaskTitle}
+                                            setEditTaskTitle={setEditTaskTitle}
+                                            onSaveTaskEdit={handleSaveTaskEdit}
+                                            onCancelEdit={() => setEditingTaskId(null)}
+                                            onStartEdit={(t) => {
+                                                setEditingTaskId(t.id)
+                                                setEditTaskTitle(t.title)
+                                            }}
+                                            onToggleTask={onToggleTask}
+                                            onDeleteTask={onDeleteTask}
+                                            onUpdateTask={onUpdateTask}
+                                            onUpdateProject={onUpdateProject}
+                                            isActiveTimer={effectiveTimerTaskId === task.id}
+                                            onSetAsTimer={() => {
+                                                setActiveTimerTaskId(task.id);
+                                                setShowTimerModal(true);
+                                            }}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 {completedTasks.length > 0 && (
                     <div className="mt-8 pt-6 border-t border-slate-100">
                         <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">مهام منجزة مؤخراً</h4>
                         <div className="space-y-2">
-                            {completedTasks.slice(-3).map(task => (
-                                <div key={task.id} className="flex items-center gap-3 text-slate-400">
-                                    <CheckCircle2 size={16} className="text-emerald-500" />
-                                    <span className="font-medium line-through">{task.title}</span>
-                                </div>
-                            ))}
+                            {completedTasks.slice(-3).map(task => {
+                                let daysPassed = 0;
+                                if (task.lastCompletedDate && task.createdAt) {
+                                    daysPassed = differenceInDays(new Date(task.lastCompletedDate), new Date(task.createdAt));
+                                }
+                                return (
+                                    <div key={task.id} className="flex flex-col gap-1 p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                                        <div className="flex items-center gap-3 text-slate-400">
+                                            <CheckCircle2 size={16} className="text-emerald-500" />
+                                            <span className="font-medium line-through flex-1">{task.title}</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2 mr-7">
+                                            {task.createdAt && (
+                                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
+                                                    <Target size={10} className="text-indigo-400" />
+                                                    <span>مدة الإنجاز: {daysPassed} {daysPassed === 1 ? 'يوم' : daysPassed === 2 ? 'يومان' : daysPassed >= 3 && daysPassed <= 10 ? 'أيام' : 'يوماً'}</span>
+                                                </div>
+                                            )}
+                                            {(task.totalSeconds || 0) > 0 && (
+                                                <>
+                                                    <span className="text-slate-300">|</span>
+                                                    <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-500">
+                                                        <Clock size={10} />
+                                                        <span>وقت العمل: {Math.floor((task.totalSeconds || 0) / 60)} دقيقة</span>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                )
+                            })}
                         </div>
                     </div>
                 )}

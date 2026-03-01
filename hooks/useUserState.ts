@@ -53,6 +53,55 @@ const INITIAL_STATE: UserState = {
   athkarLogs: [],
 }
 
+// ── Pure helper: calculate Quran streak from logs ─────────────────────────
+function calculateQuranStreak(logs: QuranLog[]): number {
+  if (!logs.length) return 0
+
+  // Use local date string to avoid UTC timezone shifting the date
+  const toLocalDateStr = (d: Date) => {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  // Unique dates that have at least one log, sorted descending
+  const uniqueDates = Array.from(new Set(logs.map(l => l.date)))
+    .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0))
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const todayStr = toLocalDateStr(today)
+
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = toLocalDateStr(yesterday)
+
+  // Streak must start from today or yesterday
+  const hasToday = uniqueDates.includes(todayStr)
+  const hasYesterday = uniqueDates.includes(yesterdayStr)
+
+  if (!hasToday && !hasYesterday) return 0
+
+  // Start checking from today if logged today, otherwise from yesterday
+  const checkDate = new Date(hasToday ? today : yesterday)
+  let currentStreak = 0
+
+  for (const logDate of uniqueDates) {
+    const expected = toLocalDateStr(checkDate)
+    if (logDate === expected) {
+      currentStreak++
+      checkDate.setDate(checkDate.getDate() - 1)
+    } else if (logDate < expected) {
+      // Gap found
+      break
+    }
+    // logDate > expected means future date — skip
+  }
+
+  return currentStreak
+}
+
 export function useUserState() {
   const [userState, setUserState] = useState<UserState>(INITIAL_STATE)
   const [loading, setLoading] = useState(true)
@@ -66,6 +115,58 @@ export function useUserState() {
         const res = await fetch('/api/state')
         if (res.ok) {
           const data = await res.json()
+          // Recalculate quran streak live from logs so stale DB value is never shown
+          if (data.quranState?.logs) {
+            data.quranState.streak = calculateQuranStreak(data.quranState.logs)
+          }
+
+          // Reset recurring project tasks
+          if (data.projects) {
+            let hasChanges = false;
+            const todayStr = new Date().toISOString().split('T')[0];
+            const todayDate = new Date(todayStr);
+
+            data.projects = data.projects.map((p: any) => {
+              const resetTasks = p.tasks.map((t: any) => {
+                if (t.completed && t.recurrence && t.lastCompletedDate) {
+                  const lastDateStr = t.lastCompletedDate.split('T')[0];
+                  let shouldReset = false;
+
+                  if (t.recurrence === 'daily' && todayStr > lastDateStr) {
+                    shouldReset = true;
+                  } else if (t.recurrence === 'monthly') {
+                    const lastDate = new Date(lastDateStr);
+                    if (todayDate.getMonth() !== lastDate.getMonth() || todayDate.getFullYear() !== lastDate.getFullYear()) {
+                      shouldReset = true;
+                    }
+                  }
+
+                  if (shouldReset) {
+                    hasChanges = true;
+                    return { ...t, completed: false };
+                  }
+                }
+                return t;
+              });
+
+              if (hasChanges) {
+                const totalTasks = resetTasks.length;
+                const completedTasks = resetTasks.filter((t: any) => t.completed).length;
+                p.progress = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+                p.tasks = resetTasks;
+              }
+              return p;
+            });
+
+            if (hasChanges) {
+              fetch('/api/state', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+              }).catch(console.error);
+            }
+          }
+
           setUserState(data)
         }
       } catch (err) {
@@ -307,48 +408,6 @@ export function useUserState() {
   )
 
   // ── Quran helpers ──────────────────────────────────────────────────────────
-  const calculateQuranStreak = (logs: QuranLog[]) => {
-    if (!logs.length) return 0
-    const sortedLogs = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    let currentStreak = 0
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    let checkDate = new Date(today)
-
-    const todayStr = checkDate.toISOString().split('T')[0]
-
-    // Check if there's a log for today
-    const hasToday = sortedLogs.some(l => l.date === todayStr)
-
-    // Start counting back from today or yesterday
-    if (!hasToday) {
-      checkDate.setDate(checkDate.getDate() - 1)
-      const yesterdayStr = checkDate.toISOString().split('T')[0]
-      if (!sortedLogs.some(l => l.date === yesterdayStr)) {
-        return 0 // Streak broken if neither today nor yesterday has a log
-      }
-    }
-
-    // Now count backwards continuously
-    let checkingDateStr = checkDate.toISOString().split('T')[0]
-    let logIndex = 0
-
-    // Filter to unique dates (in case there are multiple logs per day, though unlikely with our unique constraint, better safe)
-    const uniqueDates = Array.from(new Set(sortedLogs.map(l => l.date))).sort((a, b) => new Date(b).getTime() - new Date(a).getTime())
-
-    for (const logDate of uniqueDates) {
-      if (logDate === checkingDateStr) {
-        currentStreak++
-        checkDate.setDate(checkDate.getDate() - 1)
-        checkingDateStr = checkDate.toISOString().split('T')[0]
-      } else if (new Date(logDate).getTime() < new Date(checkingDateStr).getTime()) {
-        // We found a gap
-        break
-      }
-    }
-
-    return currentStreak
-  }
 
   const saveQuranLog = useCallback(
     (log: QuranLog) => {
@@ -453,6 +512,11 @@ export function useUserState() {
           }
           // Set position based on current task count
           task.position = updatedTasks.length;
+
+          if (!task.createdAt) {
+            task.createdAt = new Date().toISOString();
+          }
+
           updatedTasks.push(task);
 
           return { ...p, tasks: updatedTasks };
@@ -474,7 +538,11 @@ export function useUserState() {
             if (t.id === taskId) {
               const completing = !t.completed;
               if (t.isTopTask && completing) wasTopTaskCompleted = true;
-              return { ...t, completed: completing };
+              return {
+                ...t,
+                completed: completing,
+                lastCompletedDate: completing ? new Date().toISOString() : t.lastCompletedDate
+              };
             }
             return t;
           });

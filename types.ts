@@ -131,6 +131,11 @@ export interface ProjectTask {
   completed: boolean;
   isTopTask: boolean;
   position: number;
+  recurrence?: 'none' | 'daily' | 'monthly';
+  lastCompletedDate?: string;
+  pomodoroCount?: number;
+  totalSeconds?: number;
+  createdAt?: string;
 }
 
 export interface Project {
@@ -141,6 +146,7 @@ export interface Project {
   lastActivity: string; // ISO date string
   targetGoal?: string;
   currentStage?: string;
+  pomodoroCount?: number;
   tasks: ProjectTask[];
 }
 

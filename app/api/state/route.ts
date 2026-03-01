@@ -136,6 +136,7 @@ export async function GET() {
       lastActivity: p.lastActivity,
       targetGoal: p.targetGoal || undefined,
       currentStage: p.currentStage || undefined,
+      pomodoroCount: p.pomodoroCount,
       tasks: p.tasks.map((t: any) => ({
         id: t.id,
         projectId: t.projectId,
@@ -143,6 +144,10 @@ export async function GET() {
         completed: t.completed,
         isTopTask: t.isTopTask,
         position: t.position,
+        recurrence: t.recurrence || undefined,
+        lastCompletedDate: t.lastCompletedDate || undefined,
+        pomodoroCount: t.pomodoroCount || 0,
+        createdAt: t.createdAt ? t.createdAt.toISOString() : undefined,
       }))
     })),
     recoveryState: recoveryState
@@ -445,7 +450,8 @@ export async function PUT(request: NextRequest) {
           lastActivity: project.lastActivity,
           targetGoal: project.targetGoal,
           currentStage: project.currentStage,
-        },
+          pomodoroCount: project.pomodoroCount || 0,
+        } as any,
         create: {
           id: project.id,
           userId,
@@ -455,7 +461,8 @@ export async function PUT(request: NextRequest) {
           lastActivity: project.lastActivity,
           targetGoal: project.targetGoal,
           currentStage: project.currentStage,
-        },
+          pomodoroCount: project.pomodoroCount || 0,
+        } as any,
       })
 
       // Upsert tasks
@@ -467,7 +474,11 @@ export async function PUT(request: NextRequest) {
             completed: task.completed,
             isTopTask: task.isTopTask,
             position: task.position,
-          },
+            recurrence: task.recurrence,
+            lastCompletedDate: task.lastCompletedDate,
+            pomodoroCount: task.pomodoroCount || 0,
+            totalSeconds: task.totalSeconds || 0,
+          } as any,
           create: {
             id: task.id,
             projectId: project.id,
@@ -475,7 +486,12 @@ export async function PUT(request: NextRequest) {
             completed: task.completed,
             isTopTask: task.isTopTask,
             position: task.position,
-          },
+            recurrence: task.recurrence,
+            lastCompletedDate: task.lastCompletedDate,
+            pomodoroCount: task.pomodoroCount || 0,
+            totalSeconds: task.totalSeconds || 0,
+            ...(task.createdAt ? { createdAt: new Date(task.createdAt) } : {}),
+          } as any,
         })
       }
 

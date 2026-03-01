@@ -168,6 +168,7 @@ model Project {
   lastActivity String        
   targetGoal   String?
   currentStage String?
+  pomodoroCount Int           @default(0)
   tasks        ProjectTask[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -178,9 +179,14 @@ model ProjectTask {
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   title     String
-  completed Boolean @default(false)
-  isTopTask Boolean @default(false)
-  position  Int     @default(0)
+  completed         Boolean @default(false)
+  isTopTask         Boolean @default(false)
+  position          Int     @default(0)
+  recurrence        String? // 'none', 'daily', 'monthly'
+  lastCompletedDate String?
+  pomodoroCount     Int     @default(0)
+  totalSeconds      Int     @default(0)
+  createdAt         DateTime @default(now())
 }
 
 model RecoveryState {
