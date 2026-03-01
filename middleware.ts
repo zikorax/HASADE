@@ -2,22 +2,23 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export function middleware(req: NextRequest) {
-  // Auth.js v5 uses "authjs.session-token", v4 used "next-auth.session-token"
-  const session =
-    req.cookies.get("authjs.session-token") ||
-    req.cookies.get("__Secure-authjs.session-token") ||
-    req.cookies.get("next-auth.session-token") ||
-    req.cookies.get("__Secure-next-auth.session-token")
+  const { pathname } = req.nextUrl
 
-  const isDashboard = req.nextUrl.pathname.startsWith("/dashboard")
-  const isLogin = req.nextUrl.pathname.startsWith("/login")
-  const isApiAuth = req.nextUrl.pathname.startsWith("/api/auth")
+  const sessionToken =
+    req.cookies.get("__Secure-authjs.session-token")?.value ||
+    req.cookies.get("authjs.session-token")?.value ||
+    req.cookies.get("__Host-authjs.session-token")?.value ||
+    req.cookies.get("__Secure-next-auth.session-token")?.value ||
+    req.cookies.get("next-auth.session-token")?.value
 
-  if (isDashboard && !session) {
+  const isDashboard = pathname.startsWith("/dashboard")
+  const isLogin = pathname.startsWith("/login")
+
+  if (isDashboard && !sessionToken) {
     return NextResponse.redirect(new URL("/login", req.url))
   }
 
-  if (isLogin && session) {
+  if (isLogin && sessionToken) {
     return NextResponse.redirect(new URL("/dashboard", req.url))
   }
 
