@@ -144,14 +144,14 @@ export async function GET() {
         dayLogs: []
       },
 
-    sleepLogs: sleepLogs,
+    sleepLogs: sleepLogs as any,
 
     quranState: quranState
       ? {
         khatmaStartDate: quranState.khatmaStartDate,
         khatmaGoalDays: quranState.khatmaGoalDays,
         streak: quranState.streak,
-        logs: quranLogs
+        logs: quranLogs as any
       }
       : {
         khatmaStartDate: new Date().toISOString().split('T')[0],
@@ -179,8 +179,8 @@ export async function GET() {
         cleanStartDate: recoveryState.cleanStartDate,
         longestStreak: recoveryState.longestStreak,
         currentGoal: recoveryState.currentGoal,
-        logs: recoveryLogs,
-        urges: recoveryUrges
+        logs: recoveryLogs as any,
+        urges: recoveryUrges as any
       }
       : {
         startDate: new Date().toISOString().split('T')[0],
@@ -191,7 +191,7 @@ export async function GET() {
         urges: []
       },
 
-    athkarLogs: athkarLogs
+    athkarLogs: athkarLogs as any
   }
 
   return NextResponse.json(state)
@@ -236,6 +236,21 @@ export async function PUT(request: NextRequest) {
           streak: habit.streak
         }
       })
+
+      for (const date of habit.completedDates) {
+        await tx.habitCompletion.upsert({
+          where: { habitId_date: { habitId: habit.id, date } },
+          update: {},
+          create: { habitId: habit.id, date }
+        })
+      }
+
+      await tx.habitCompletion.deleteMany({
+        where: {
+          habitId: habit.id,
+          date: { notIn: habit.completedDates }
+        }
+      })
     }
 
     const habitIds = state.habits?.map(h => h.id) || []
@@ -266,12 +281,167 @@ export async function PUT(request: NextRequest) {
           progress: goal.progress
         }
       })
+
+      for (const task of goal.tasks) {
+        await tx.task.upsert({
+          where: { id: task.id },
+          update: { title: task.title, completed: task.completed },
+          create: {
+            id: task.id,
+            goalId: goal.id,
+            title: task.title,
+            completed: task.completed
+          }
+        })
+      }
+
+      const taskIds = goal.tasks.map(t => t.id)
+      await tx.task.deleteMany({
+        where: { goalId: goal.id, id: { notIn: taskIds } }
+      })
     }
 
     const goalIds = state.goals?.map(g => g.id) || []
     if (goalIds.length > 0) {
       await tx.goal.deleteMany({
         where: { userId, id: { notIn: goalIds } }
+      })
+    }
+
+    // ───────────────── PRAYER LOGS ─────────────────
+    for (const log of state.prayerLogs || []) {
+      await tx.prayerLog.upsert({
+        where: { userId_date: { userId, date: log.date } },
+        update: { completedPrayers: log.completed as string[] },
+        create: {
+          userId,
+          date: log.date,
+          completedPrayers: log.completed as string[]
+        }
+      })
+    }
+
+    // ───────────────── WORKOUT LOGS ─────────────────
+    for (const log of state.workoutLogs || []) {
+      await tx.workoutLog.upsert({
+        where: { userId_date: { userId, date: log.date } },
+        update: { type: log.type, duration: log.duration, intensity: log.intensity },
+        create: {
+          userId,
+          date: log.date,
+          type: log.type,
+          duration: log.duration,
+          intensity: log.intensity
+        }
+      })
+    }
+
+    const workoutDates = (state.workoutLogs || []).map(w => w.date)
+    await tx.workoutLog.deleteMany({
+      where: { userId, date: { notIn: workoutDates } }
+    })
+
+    // ───────────────── SLEEP LOGS ─────────────────
+    for (const log of state.sleepLogs || []) {
+      await (tx as any).sleepLog.upsert({
+        where: { userId_date: { userId, date: log.date } },
+        update: { sleepTime: log.sleepTime, wakeTime: log.wakeTime, duration: log.duration },
+        create: { userId, date: log.date, sleepTime: log.sleepTime, wakeTime: log.wakeTime, duration: log.duration }
+      })
+    }
+
+    const sleepDates = (state.sleepLogs || []).map(s => s.date)
+    await (tx as any).sleepLog.deleteMany({
+      where: { userId, date: { notIn: sleepDates } }
+    })
+
+    // ───────────────── HASHISH STATE ─────────────────
+    const hs = state.hashishState
+    if (hs) {
+      await tx.hashishState.upsert({
+        where: { userId },
+        update: {
+          startDate: hs.startDate,
+          cleanStartDate: hs.cleanStartDate ?? null,
+          longestStreak: hs.longestStreak,
+          currentGoal: hs.currentGoal
+        },
+        create: {
+          userId,
+          startDate: hs.startDate,
+          cleanStartDate: hs.cleanStartDate ?? null,
+          longestStreak: hs.longestStreak,
+          currentGoal: hs.currentGoal
+        }
+      })
+
+      for (const dayLog of hs.dayLogs) {
+        const dbDayLog = await tx.hashishDayLog.upsert({
+          where: { userId_date: { userId, date: dayLog.date } },
+          update: { count: dayLog.count, smokedDuringWork: dayLog.smokedDuringWork },
+          create: {
+            userId,
+            date: dayLog.date,
+            count: dayLog.count,
+            smokedDuringWork: dayLog.smokedDuringWork
+          }
+        })
+
+        for (const attack of dayLog.attacks) {
+          await tx.hashishAttack.upsert({
+            where: { id: attack.id },
+            update: {
+              time: attack.time,
+              activity: attack.activity,
+              reason: attack.reason,
+              result: attack.result
+            },
+            create: {
+              id: attack.id,
+              dayLogId: dbDayLog.id,
+              time: attack.time,
+              activity: attack.activity,
+              reason: attack.reason,
+              result: attack.result
+            }
+          })
+        }
+
+        const attackIds = dayLog.attacks.map(a => a.id)
+        await tx.hashishAttack.deleteMany({
+          where: { dayLogId: dbDayLog.id, id: { notIn: attackIds } }
+        })
+      }
+    }
+
+    // ───────────────── QURAN STATE ─────────────────
+    if (state.quranState) {
+      await tx.quranState.upsert({
+        where: { userId },
+        update: {
+          khatmaStartDate: state.quranState.khatmaStartDate,
+          khatmaGoalDays: state.quranState.khatmaGoalDays,
+          streak: state.quranState.streak
+        },
+        create: {
+          userId,
+          khatmaStartDate: state.quranState.khatmaStartDate,
+          khatmaGoalDays: state.quranState.khatmaGoalDays,
+          streak: state.quranState.streak
+        }
+      })
+
+      for (const log of state.quranState.logs) {
+        await tx.quranLog.upsert({
+          where: { id: log.id },
+          update: { date: log.date, pagesRead: log.pagesRead },
+          create: { id: log.id, userId, date: log.date, pagesRead: log.pagesRead }
+        })
+      }
+
+      const quranLogIds = state.quranState.logs.map(l => l.id)
+      await tx.quranLog.deleteMany({
+        where: { userId, id: { notIn: quranLogIds } }
       })
     }
 
@@ -302,15 +472,114 @@ export async function PUT(request: NextRequest) {
           totalSeconds: project.totalSeconds || 0
         }
       })
+
+      for (const task of project.tasks) {
+        await tx.projectTask.upsert({
+          where: { id: task.id },
+          update: {
+            title: task.title,
+            completed: task.completed,
+            isTopTask: task.isTopTask,
+            position: task.position,
+            recurrence: task.recurrence,
+            lastCompletedDate: task.lastCompletedDate,
+            pomodoroCount: task.pomodoroCount || 0,
+            totalSeconds: task.totalSeconds || 0
+          } as any,
+          create: {
+            id: task.id,
+            projectId: project.id,
+            title: task.title,
+            completed: task.completed,
+            isTopTask: task.isTopTask,
+            position: task.position,
+            recurrence: task.recurrence,
+            lastCompletedDate: task.lastCompletedDate,
+            pomodoroCount: task.pomodoroCount || 0,
+            totalSeconds: task.totalSeconds || 0,
+            ...(task.createdAt ? { createdAt: new Date(task.createdAt) } : {})
+          } as any
+        })
+      }
+
+      const taskIds = project.tasks.map(t => t.id)
+      await tx.projectTask.deleteMany({
+        where: { projectId: project.id, id: { notIn: taskIds } }
+      })
     }
 
     const projectIds = state.projects?.map(p => p.id) || []
-
     if (projectIds.length > 0) {
       await tx.project.deleteMany({
-        where: {
+        where: { userId, id: { notIn: projectIds } }
+      })
+    }
+
+    // ───────────────── RECOVERY ─────────────────
+    if (state.recoveryState) {
+      await tx.recoveryState.upsert({
+        where: { userId },
+        update: {
+          startDate: state.recoveryState.startDate,
+          cleanStartDate: state.recoveryState.cleanStartDate,
+          longestStreak: state.recoveryState.longestStreak,
+          currentGoal: state.recoveryState.currentGoal
+        },
+        create: {
           userId,
-          id: { notIn: projectIds }
+          startDate: state.recoveryState.startDate,
+          cleanStartDate: state.recoveryState.cleanStartDate,
+          longestStreak: state.recoveryState.longestStreak,
+          currentGoal: state.recoveryState.currentGoal
+        }
+      })
+
+      for (const log of state.recoveryState.logs) {
+        await tx.recoveryLog.upsert({
+          where: { userId_date: { userId, date: log.date } },
+          update: { pressureLevel: log.pressureLevel, isClean: log.isClean },
+          create: { userId, date: log.date, pressureLevel: log.pressureLevel, isClean: log.isClean }
+        })
+      }
+
+      for (const urge of state.recoveryState.urges) {
+        await tx.recoveryUrge.upsert({
+          where: { id: urge.id },
+          update: {
+            date: urge.date,
+            time: urge.time,
+            reason: urge.reason,
+            intensity: urge.intensity,
+            alternativeUsed: urge.alternativeUsed
+          },
+          create: {
+            id: urge.id,
+            userId,
+            date: urge.date,
+            time: urge.time,
+            reason: urge.reason,
+            intensity: urge.intensity,
+            alternativeUsed: urge.alternativeUsed
+          }
+        })
+      }
+    }
+
+    // ───────────────── ATHKAR LOGS ─────────────────
+    for (const log of state.athkarLogs || []) {
+      await (tx as any).athkarLog.upsert({
+        where: { userId_date: { userId, date: log.date } },
+        update: {
+          morningCompleted: log.morningCompleted,
+          eveningCompleted: log.eveningCompleted,
+          counts: log.counts as any
+        },
+        create: {
+          userId,
+          date: log.date,
+          morningCompleted: log.morningCompleted,
+          eveningCompleted: log.eveningCompleted,
+          counts: log.counts as any
         }
       })
     }
