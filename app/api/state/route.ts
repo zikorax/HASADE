@@ -137,6 +137,7 @@ export async function GET() {
       targetGoal: p.targetGoal || undefined,
       currentStage: p.currentStage || undefined,
       pomodoroCount: p.pomodoroCount,
+      totalSeconds: p.totalSeconds || 0,
       tasks: p.tasks.map((t: any) => ({
         id: t.id,
         projectId: t.projectId,
@@ -451,6 +452,7 @@ export async function PUT(request: NextRequest) {
           targetGoal: project.targetGoal,
           currentStage: project.currentStage,
           pomodoroCount: project.pomodoroCount || 0,
+          totalSeconds: project.totalSeconds || 0,
         } as any,
         create: {
           id: project.id,
@@ -462,6 +464,7 @@ export async function PUT(request: NextRequest) {
           targetGoal: project.targetGoal,
           currentStage: project.currentStage,
           pomodoroCount: project.pomodoroCount || 0,
+          totalSeconds: project.totalSeconds || 0,
         } as any,
       })
 

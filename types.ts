@@ -147,6 +147,7 @@ export interface Project {
   targetGoal?: string;
   currentStage?: string;
   pomodoroCount?: number;
+  totalSeconds?: number;
   tasks: ProjectTask[];
 }
 

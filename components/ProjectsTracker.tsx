@@ -199,7 +199,16 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
                                     <Clock size={14} />
                                     {daysSinceActivity === 0 ? 'نشط اليوم' : `آخر نشاط منذ ${daysSinceActivity} أيام`}
                                 </span>
-                                <span>{project.tasks.filter(t => !t.completed).length} مهام متبقية</span>
+                                <div className="flex items-center gap-3">
+                                    {(project.totalSeconds || 0) > 0 && (
+                                        <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg">
+                                            <Clock size={10} />
+                                            {Math.floor((project.totalSeconds || 0) / 3600) > 0 && `${Math.floor((project.totalSeconds || 0) / 3600)}س `}
+                                            {Math.floor(((project.totalSeconds || 0) % 3600) / 60)}د
+                                        </span>
+                                    )}
+                                    <span>{project.tasks.filter(t => !t.completed).length} مهام متبقية</span>
+                                </div>
                             </div>
                         </div>
                     )
@@ -235,12 +244,10 @@ interface SortableTaskItemProps {
     onDeleteTask: (projectId: string, taskId: string) => void;
     onUpdateTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void;
     onUpdateProject: (projectId: string, updates: any) => void;
-    isActiveTimer?: boolean;
-    onSetAsTimer?: () => void;
 }
 
 const SortableTaskItem = (props: SortableTaskItemProps) => {
-    const { task, projectId, isEditing, editTaskTitle, setEditTaskTitle, onSaveTaskEdit, onCancelEdit, onStartEdit, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject, isActiveTimer, onSetAsTimer } = props;
+    const { task, projectId, isEditing, editTaskTitle, setEditTaskTitle, onSaveTaskEdit, onCancelEdit, onStartEdit, onToggleTask, onDeleteTask, onUpdateTask, onUpdateProject } = props;
 
     const {
         attributes,
@@ -261,9 +268,9 @@ const SortableTaskItem = (props: SortableTaskItemProps) => {
         <div
             ref={setNodeRef}
             style={style}
-            className={`group flex items-center justify-between p-4 rounded-2xl border transition-all ${isDragging ? 'opacity-50 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xl bg-white scale-[1.02]' : (isActiveTimer ? 'bg-indigo-50/80 border-indigo-300 ring-1 ring-indigo-300 shadow-sm relative overflow-hidden' : (task.isTopTask ? 'bg-indigo-50/40 border-indigo-200' : 'bg-white border-slate-100 hover:border-slate-300'))}`}
+            className={`group flex items-center justify-between p-4 rounded-2xl border transition-all ${isDragging ? 'opacity-50 border-indigo-500 ring-2 ring-indigo-500/20 shadow-xl bg-white scale-[1.02]' : (task.isTopTask ? 'bg-indigo-50/40 border-indigo-200' : 'bg-white border-slate-100 hover:border-slate-300')}`}
         >
-            {isActiveTimer && <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500" />}
+
             <div className="flex items-center gap-4 flex-1">
                 <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing p-1 text-slate-300 hover:text-slate-500 rounded transition-colors">
                     <GripVertical size={20} />
@@ -297,43 +304,12 @@ const SortableTaskItem = (props: SortableTaskItemProps) => {
                             </button>
                         </div>
                     ) : (
-                        <span className={`font-bold ${task.isTopTask || isActiveTimer ? 'text-indigo-900' : 'text-slate-700'}`}>{task.title}</span>
+                        <span className={`font-bold ${task.isTopTask ? 'text-indigo-900' : 'text-slate-700'}`}>{task.title}</span>
                     )}
                 </div>
             </div>
 
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                {((task.pomodoroCount || 0) > 0 || (task.totalSeconds || 0) > 0) && (
-                    <div className="flex items-center gap-2 mr-2">
-                        {(task.pomodoroCount || 0) > 0 && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-indigo-500 bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-100" title="جلسات بومودورو">
-                                <Target size={10} />
-                                {task.pomodoroCount}
-                            </span>
-                        )}
-                        {(task.totalSeconds || 0) > 0 && (
-                            <span className="flex items-center gap-1 text-[10px] font-bold text-slate-500 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100" title="إجمالي الدقائق">
-                                <Clock size={10} />
-                                {Math.floor((task.totalSeconds || 0) / 60)}د
-                            </span>
-                        )}
-                    </div>
-                )}
-                {!task.completed && onSetAsTimer && (
-                    <button
-                        onClick={onSetAsTimer}
-                        title="بدء مؤقت بومودورو"
-                        className={`p-2 rounded-xl transition-colors ${isActiveTimer ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:bg-indigo-50 hover:text-indigo-500'}`}
-                    >
-                        <Clock size={16} />
-                    </button>
-                )}
-                {task.pomodoroCount !== undefined && task.pomodoroCount > 0 && (
-                    <span className="flex items-center gap-1 text-xs font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg" title="جلسات بومودورو مكتملة">
-                        <Target size={12} className="text-indigo-400" />
-                        {task.pomodoroCount}
-                    </span>
-                )}
                 <button
                     onClick={() => {
                         onUpdateProject(projectId, { lastActivity: new Date().toISOString() })
@@ -391,11 +367,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
     const [editTaskTitle, setEditTaskTitle] = useState('')
 
-    // Active timer task
-    const [activeTimerTaskId, setActiveTimerTaskId] = useState<string | null>(null)
+    // Project-level timer
     const [showTimerModal, setShowTimerModal] = useState(false)
-    const defaultTimerTask = pendingTasks.find(t => t.isTopTask) || pendingTasks[0]
-    const effectiveTimerTaskId = activeTimerTaskId || defaultTimerTask?.id
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -476,11 +449,30 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                         </span>
                         <span>•</span>
                         <span>{project.progress}% مكتمل</span>
+                        {(project.totalSeconds || 0) > 0 && (
+                            <>
+                                <span>•</span>
+                                <span className="flex items-center gap-1 text-indigo-500">
+                                    <Clock size={14} />
+                                    {Math.floor((project.totalSeconds || 0) / 3600) > 0 && `${Math.floor((project.totalSeconds || 0) / 3600)}س `}
+                                    {Math.floor(((project.totalSeconds || 0) % 3600) / 60)}د
+                                </span>
+                            </>
+                        )}
                     </div>
                 </div>
-                <button onClick={() => setShowDeleteModal(true)} className="p-3 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-colors">
-                    <Trash2 size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setShowTimerModal(true)}
+                        className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-3 rounded-xl font-bold hover:bg-indigo-500 transition-all active:scale-95 shadow-lg shadow-indigo-500/20"
+                    >
+                        <Clock size={18} />
+                        مؤقت بومودورو
+                    </button>
+                    <button onClick={() => setShowDeleteModal(true)} className="p-3 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-colors">
+                        <Trash2 size={20} />
+                    </button>
+                </div>
             </header>
 
             {showDeleteModal && (
@@ -525,27 +517,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                         <PomodoroTimer
                             pomodorosCompleted={project.pomodoroCount || 0}
                             autoStart={true}
-                            taskTitle={effectiveTimerTaskId ? (pendingTasks.find(t => t.id === effectiveTimerTaskId) || dailyTasks.find(t => t.id === effectiveTimerTaskId) || monthlyTasks.find(t => t.id === effectiveTimerTaskId))?.title : undefined}
+                            taskTitle={project.name}
                             onTick={(seconds) => {
-                                if (effectiveTimerTaskId) {
-                                    const task = pendingTasks.find(t => t.id === effectiveTimerTaskId) || dailyTasks.find(t => t.id === effectiveTimerTaskId) || monthlyTasks.find(t => t.id === effectiveTimerTaskId);
-                                    if (task) {
-                                        onUpdateTask(project.id, task.id, {
-                                            totalSeconds: (task.totalSeconds || 0) + seconds
-                                        });
-                                    }
-                                }
+                                onUpdateProject(project.id, {
+                                    totalSeconds: (project.totalSeconds || 0) + seconds
+                                });
                             }}
                             onSessionComplete={() => {
-                                onUpdateProject(project.id, { pomodoroCount: (project.pomodoroCount || 0) + 1, lastActivity: new Date().toISOString() });
-                                if (effectiveTimerTaskId) {
-                                    const task = pendingTasks.find(t => t.id === effectiveTimerTaskId) || dailyTasks.find(t => t.id === effectiveTimerTaskId) || monthlyTasks.find(t => t.id === effectiveTimerTaskId);
-                                    if (task) {
-                                        onUpdateTask(project.id, task.id, {
-                                            pomodoroCount: (task.pomodoroCount || 0) + 1
-                                        });
-                                    }
-                                }
+                                onUpdateProject(project.id, {
+                                    pomodoroCount: (project.pomodoroCount || 0) + 1,
+                                    lastActivity: new Date().toISOString()
+                                });
                             }}
                         />
                     </div>
@@ -652,11 +634,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                     onDeleteTask={onDeleteTask}
                                     onUpdateTask={onUpdateTask}
                                     onUpdateProject={onUpdateProject}
-                                    isActiveTimer={effectiveTimerTaskId === task.id}
-                                    onSetAsTimer={() => {
-                                        setActiveTimerTaskId(task.id);
-                                        setShowTimerModal(true);
-                                    }}
                                 />
                             ))}
                         </SortableContext>
@@ -733,11 +710,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                             onDeleteTask={onDeleteTask}
                                             onUpdateTask={onUpdateTask}
                                             onUpdateProject={onUpdateProject}
-                                            isActiveTimer={effectiveTimerTaskId === task.id}
-                                            onSetAsTimer={() => {
-                                                setActiveTimerTaskId(task.id);
-                                                setShowTimerModal(true);
-                                            }}
                                         />
                                     ))}
                                 </div>
@@ -769,11 +741,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                             onDeleteTask={onDeleteTask}
                                             onUpdateTask={onUpdateTask}
                                             onUpdateProject={onUpdateProject}
-                                            isActiveTimer={effectiveTimerTaskId === task.id}
-                                            onSetAsTimer={() => {
-                                                setActiveTimerTaskId(task.id);
-                                                setShowTimerModal(true);
-                                            }}
                                         />
                                     ))}
                                 </div>
@@ -797,23 +764,12 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                             <CheckCircle2 size={16} className="text-emerald-500" />
                                             <span className="font-medium line-through flex-1">{task.title}</span>
                                         </div>
-                                        <div className="flex flex-wrap items-center gap-2 mr-7">
-                                            {task.createdAt && (
-                                                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400">
-                                                    <Target size={10} className="text-indigo-400" />
-                                                    <span>مدة الإنجاز: {daysPassed} {daysPassed === 1 ? 'يوم' : daysPassed === 2 ? 'يومان' : daysPassed >= 3 && daysPassed <= 10 ? 'أيام' : 'يوماً'}</span>
-                                                </div>
-                                            )}
-                                            {(task.totalSeconds || 0) > 0 && (
-                                                <>
-                                                    <span className="text-slate-300">|</span>
-                                                    <div className="flex items-center gap-1 text-[10px] font-bold text-indigo-500">
-                                                        <Clock size={10} />
-                                                        <span>وقت العمل: {Math.floor((task.totalSeconds || 0) / 60)} دقيقة</span>
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
+                                        {task.createdAt && (
+                                            <div className="flex items-center gap-1 text-[10px] font-bold text-slate-400 mr-7">
+                                                <Target size={10} className="text-indigo-400" />
+                                                <span>مدة الإنجاز: {daysPassed} {daysPassed === 1 ? 'يوم' : daysPassed === 2 ? 'يومان' : daysPassed >= 3 && daysPassed <= 10 ? 'أيام' : 'يوماً'}</span>
+                                            </div>
+                                        )}
                                     </div>
                                 )
                             })}
