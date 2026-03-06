@@ -1,11 +1,13 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { Project, ProjectTask } from '@/types'
+import { useRouter } from 'next/navigation'
 import { Plus, Target, Clock, CheckCircle2, ChevronLeft, ChevronRight, Layers, Trash2, LayoutGrid, AlertTriangle, Edit2, Check, X, ArrowUp, ArrowDown, GripVertical, Repeat } from 'lucide-react'
-import { format, differenceInDays, parseISO } from 'date-fns'
+import { format, differenceInDays, parseISO, subDays } from 'date-fns'
 import { PomodoroTimer } from './PomodoroTimer'
 import { ar } from 'date-fns/locale'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend } from 'recharts'
 import {
     DndContext,
     closestCenter,
@@ -35,6 +37,7 @@ interface ProjectsTrackerProps {
     onUpdateTask: (projectId: string, taskId: string, updates: Partial<ProjectTask>) => void
     onReorderTasks: (projectId: string, taskId: string, direction: 'up' | 'down') => void
     onMoveTask: (projectId: string, activeId: string, overId: string) => void
+    activeProjectId?: string | null
 }
 
 export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
@@ -47,9 +50,15 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
     onDeleteTask,
     onUpdateTask,
     onReorderTasks,
-    onMoveTask
+    onMoveTask,
+    activeProjectId = null
 }) => {
-    const [activeProject, setActiveProject] = useState<string | null>(null)
+    const router = useRouter()
+    const [localActiveProject, setLocalActiveProject] = useState<string | null>(null)
+
+    // Sync local state with prop if needed, or use prop directly
+    const currentActiveId = activeProjectId !== null ? activeProjectId : localActiveProject;
+
     const [showAddProject, setShowAddProject] = useState(false)
     const [newProjectName, setNewProjectName] = useState('')
 
@@ -66,15 +75,22 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
         onAddProject(newProject)
         setNewProjectName('')
         setShowAddProject(false)
+        router.push(`/projects/${newProject.id}`)
     }
 
-    if (activeProject) {
-        const project = projects.find(p => p.id === activeProject)
+    if (currentActiveId) {
+        const project = projects.find(p => p.id === currentActiveId)
         if (project) {
             return (
                 <ProjectDetail
                     project={project}
-                    onBack={() => setActiveProject(null)}
+                    onBack={() => {
+                        if (activeProjectId) {
+                            router.push('/projects')
+                        } else {
+                            setLocalActiveProject(null)
+                        }
+                    }}
                     onUpdateProject={onUpdateProject}
                     onDeleteProject={onDeleteProject}
                     onAddTask={onAddTask}
@@ -89,6 +105,71 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
     }
 
     const activeProjects = projects.filter(p => p.status === 'active')
+
+    const [chartFilter, setChartFilter] = useState<'7days' | 'lastMonth' | 'thisMonth' | 'all'>('7days')
+
+    const projectColors = useMemo(() => [
+        '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6'
+    ], [])
+
+    const projectColorMap = useMemo(() => {
+        const map = new Map<string, string>()
+        activeProjects.forEach((p, idx) => {
+            map.set(p.id, projectColors[idx % projectColors.length])
+        })
+        return map
+    }, [activeProjects, projectColors])
+
+    const globalChartData = useMemo(() => {
+        const today = new Date()
+        let datesToInclude: string[] = []
+
+        if (chartFilter === '7days') {
+            datesToInclude = Array.from({ length: 7 }, (_, i) => format(subDays(today, 6 - i), 'yyyy-MM-dd'))
+        } else if (chartFilter === 'lastMonth') {
+            const lastDayOfPrevMonth = new Date(today.getFullYear(), today.getMonth(), 0)
+            const daysInPrevMonth = lastDayOfPrevMonth.getDate()
+            datesToInclude = Array.from({ length: daysInPrevMonth }, (_, i) => {
+                return format(new Date(today.getFullYear(), today.getMonth() - 1, daysInPrevMonth - i), 'yyyy-MM-dd')
+            })
+        } else if (chartFilter === 'thisMonth') {
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+            const daysSoFar = differenceInDays(today, startOfMonth) + 1
+            datesToInclude = Array.from({ length: daysSoFar }, (_, i) => format(subDays(today, daysSoFar - 1 - i), 'yyyy-MM-dd'))
+        } else if (chartFilter === 'all') {
+            let maxDays = 7
+            projects.forEach(p => {
+                p.timeSessions?.forEach(s => {
+                    const dAgo = differenceInDays(today, parseISO(s.date))
+                    if (dAgo > maxDays) maxDays = dAgo
+                })
+            })
+            if (maxDays > 365) maxDays = 365 // Cap at 1 year max for performance/UI
+            datesToInclude = Array.from({ length: maxDays }, (_, i) => format(subDays(today, maxDays - 1 - i), 'yyyy-MM-dd'))
+        }
+
+        return datesToInclude.map(dateStr => {
+            const dataPoint: any = {
+                date: dateStr,
+                displayDate: format(parseISO(dateStr), chartFilter === 'all' || chartFilter === 'lastMonth' ? 'dd MMM' : 'EEEE', { locale: ar })
+            }
+            let totalSeconds = 0
+
+            activeProjects.forEach(p => {
+                const session = p.timeSessions?.find(s => s.date === dateStr)
+                if (session && session.seconds > 0) {
+                    const mins = Math.ceil(session.seconds / 60)
+                    dataPoint[p.id] = mins
+                    totalSeconds += session.seconds
+                }
+            })
+            dataPoint.totalMinutes = Math.ceil(totalSeconds / 60)
+            return dataPoint
+        })
+    }, [projects, activeProjects, chartFilter])
+
+    const hasGlobalData = globalChartData.some(d => d.totalMinutes > 0)
+
 
     return (
         <div className="max-w-3xl mx-auto space-y-8 pb-24">
@@ -143,6 +224,115 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
                 </div>
             )}
 
+            {/* Global Time Chart */}
+            {activeProjects.length > 0 && (
+                <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+                        <div>
+                            <h3 className="text-xl font-black text-slate-800 mb-1">التركيز على جميع المشاريع</h3>
+                            <p className="text-sm font-bold text-slate-400">تتبع إنتاجيتك واستثمار وقتك إجمالاً</p>
+                        </div>
+                        <div className="flex bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full sm:w-auto overflow-x-auto">
+                            {[
+                                { id: '7days', label: 'آخر 7 أيام' },
+                                { id: 'thisMonth', label: 'هذا الشهر' },
+                                { id: 'lastMonth', label: 'الشهر الماضي' },
+                                { id: 'all', label: 'كل الوقت' }
+                            ].map(filter => (
+                                <button
+                                    key={filter.id}
+                                    onClick={() => setChartFilter(filter.id as any)}
+                                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${chartFilter === filter.id
+                                        ? 'bg-white text-indigo-700 shadow-sm border border-slate-200'
+                                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                >
+                                    {filter.label}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="h-72 w-full">
+                        {hasGlobalData ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={globalChartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                                    <XAxis
+                                        dataKey="displayDate"
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }}
+                                        dy={10}
+                                        minTickGap={20}
+                                    />
+                                    <YAxis
+                                        axisLine={false}
+                                        tickLine={false}
+                                        tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }}
+                                        tickFormatter={(val) => `${val}د`}
+                                    />
+                                    <Tooltip
+                                        cursor={{ fill: '#f8fafc' }}
+                                        content={({ active, payload, label }) => {
+                                            if (active && payload && payload.length) {
+                                                const totalMins = payload.reduce((acc, curr) => acc + (curr.value as number), 0);
+                                                const formatTime = (mins: number) => {
+                                                    const h = Math.floor(mins / 60);
+                                                    const m = mins % 60;
+                                                    if (h > 0 && m > 0) return `${h}س ${m}د`;
+                                                    if (h > 0) return `${h} ساعة`;
+                                                    return `${m} دقيقة`;
+                                                };
+                                                return (
+                                                    <div className="bg-slate-800 text-white p-3 rounded-2xl shadow-xl border border-slate-700 min-w-[150px]">
+                                                        <div className="text-slate-400 text-xs font-bold mb-2 pb-2 border-b border-slate-700/50 flex justify-between items-center">
+                                                            <span>{label}</span>
+                                                            <span className="text-white bg-indigo-500/20 px-2 py-0.5 rounded text-[10px]">{formatTime(totalMins)} الإجمالي</span>
+                                                        </div>
+                                                        <div className="space-y-1.5">
+                                                            {payload.map((entry: any, index: number) => {
+                                                                const project = activeProjects.find(p => p.id === entry.dataKey);
+                                                                if (!project) return null;
+                                                                return (
+                                                                    <div key={index} className="flex justify-between items-center text-xs font-bold gap-4">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.fill }} />
+                                                                            <span className="truncate max-w-[100px]">{project.name}</span>
+                                                                        </div>
+                                                                        <span>{formatTime(entry.value as number)}</span>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        }}
+                                    />
+                                    {activeProjects.map(project => (
+                                        <Bar
+                                            key={project.id}
+                                            dataKey={project.id}
+                                            stackId="a"
+                                            fill={projectColorMap.get(project.id)}
+                                            maxBarSize={40}
+                                            radius={0}
+                                        />
+                                    ))}
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-2xl">
+                                <Clock size={32} className="mb-3 text-slate-300" />
+                                <p className="font-bold">لم تقم بتسجيل أي وقت في هذه الفترة</p>
+                                <p className="text-sm text-slate-400 mt-1">اختر فترة زمنية أخرى أو ابدأ بالتركيز اليوم!</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {activeProjects.map(project => {
                     const topTask = project.tasks.find(t => t.isTopTask && !t.completed) || project.tasks.find(t => !t.completed);
@@ -151,7 +341,7 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
                     return (
                         <div
                             key={project.id}
-                            onClick={() => setActiveProject(project.id)}
+                            onClick={() => router.push(`/projects/${project.id}`)}
                             className="group cursor-pointer bg-white rounded-3xl p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:border-indigo-100 transition-all duration-300 relative overflow-hidden flex flex-col h-full"
                         >
                             <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl -z-10 rounded-full group-hover:bg-indigo-500/10 transition-all" />
@@ -355,6 +545,49 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     const dailyTasks = sortedTasks.filter(t => t.recurrence === 'daily')
     const monthlyTasks = sortedTasks.filter(t => t.recurrence === 'monthly')
 
+    const [chartFilter, setChartFilter] = useState<'7days' | 'lastMonth' | 'thisMonth' | 'all'>('7days')
+
+    // Prepare chart data based on filter
+    const chartData = useMemo(() => {
+        const today = new Date();
+        let datesToInclude: string[] = []
+
+        if (chartFilter === '7days') {
+            datesToInclude = Array.from({ length: 7 }, (_, i) => format(subDays(today, 6 - i), 'yyyy-MM-dd'))
+        } else if (chartFilter === 'lastMonth') {
+            const lastDayOfPrevMonth = new Date(today.getFullYear(), today.getMonth(), 0)
+            const daysInPrevMonth = lastDayOfPrevMonth.getDate()
+            datesToInclude = Array.from({ length: daysInPrevMonth }, (_, i) => {
+                return format(new Date(today.getFullYear(), today.getMonth() - 1, daysInPrevMonth - i), 'yyyy-MM-dd')
+            })
+        } else if (chartFilter === 'thisMonth') {
+            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
+            const daysSoFar = differenceInDays(today, startOfMonth) + 1
+            datesToInclude = Array.from({ length: daysSoFar }, (_, i) => format(subDays(today, daysSoFar - 1 - i), 'yyyy-MM-dd'))
+        } else if (chartFilter === 'all') {
+            let maxDays = 7
+            project.timeSessions?.forEach(s => {
+                const dAgo = differenceInDays(today, parseISO(s.date))
+                if (dAgo > maxDays) maxDays = dAgo
+            })
+            if (maxDays > 365) maxDays = 365
+            datesToInclude = Array.from({ length: maxDays }, (_, i) => format(subDays(today, maxDays - 1 - i), 'yyyy-MM-dd'))
+        }
+
+        const sessionsMap = new Map((project.timeSessions || []).map(s => [s.date, s.seconds]));
+
+        return datesToInclude.map(dateStr => {
+            const seconds = sessionsMap.get(dateStr) || 0;
+            return {
+                date: dateStr,
+                displayDate: format(parseISO(dateStr), chartFilter === 'all' || chartFilter === 'lastMonth' ? 'dd MMM' : 'EEEE', { locale: ar }),
+                minutes: Math.ceil(seconds / 60)
+            };
+        });
+    }, [project.timeSessions, chartFilter]);
+
+    const hasChartData = chartData.some(d => d.minutes > 0);
+
     const [newTaskTitle, setNewTaskTitle] = useState('')
     const [newTaskRecurrence, setNewTaskRecurrence] = useState<'none' | 'daily' | 'monthly'>('none')
     const [editGoal, setEditGoal] = useState(false)
@@ -519,8 +752,23 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                             autoStart={true}
                             taskTitle={project.name}
                             onTick={(seconds) => {
+                                // Add cumulative seconds
+                                const newTotal = (project.totalSeconds || 0) + seconds;
+
+                                // Update today's session
+                                const todayStr = format(new Date(), 'yyyy-MM-dd');
+                                const currentSessions = project.timeSessions ? [...project.timeSessions] : [];
+                                const todaySessionIndex = currentSessions.findIndex(s => s.date === todayStr);
+
+                                if (todaySessionIndex >= 0) {
+                                    currentSessions[todaySessionIndex].seconds += seconds;
+                                } else {
+                                    currentSessions.push({ date: todayStr, seconds });
+                                }
+
                                 onUpdateProject(project.id, {
-                                    totalSeconds: (project.totalSeconds || 0) + seconds
+                                    totalSeconds: newTotal,
+                                    timeSessions: currentSessions
                                 });
                             }}
                             onSessionComplete={() => {
@@ -593,6 +841,90 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                             ) : (
                                 <p className="text-slate-400 font-medium">ما هي المرحلة الحالية؟ انقر للتعيين.</p>
                             )}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Time Tracking Chart Section */}
+            <div className="bg-white rounded-3xl p-8 border border-slate-200 shadow-sm relative overflow-hidden">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div>
+                        <h3 className="text-xl font-black text-slate-800 mb-1">الوقت المنفق</h3>
+                        <p className="text-sm font-bold text-slate-400">تتبع تركيزك على المشروع</p>
+                    </div>
+                    <div className="flex bg-slate-50 p-1.5 rounded-xl border border-slate-200 w-full sm:w-auto overflow-x-auto">
+                        {[
+                            { id: '7days', label: 'آخر 7 أيام' },
+                            { id: 'thisMonth', label: 'هذا الشهر' },
+                            { id: 'lastMonth', label: 'الشهر الماضي' },
+                            { id: 'all', label: 'كل الوقت' }
+                        ].map(filter => (
+                            <button
+                                key={filter.id}
+                                onClick={() => setChartFilter(filter.id as any)}
+                                className={`px-4 py-2 text-xs font-bold rounded-lg transition-all whitespace-nowrap ${chartFilter === filter.id
+                                    ? 'bg-white text-indigo-700 shadow-sm border border-slate-200'
+                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                                    }`}
+                            >
+                                {filter.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="h-64 w-full">
+                    {hasChartData ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                                <XAxis
+                                    dataKey="displayDate"
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 700 }}
+                                />
+                                <YAxis
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 12, fontWeight: 700 }}
+                                    tickFormatter={(val) => `${val}د`}
+                                />
+                                <Tooltip
+                                    cursor={{ fill: '#f8fafc' }}
+                                    content={({ active, payload }) => {
+                                        if (active && payload && payload.length) {
+                                            const mins = payload[0].value as number;
+                                            const formatTime = () => {
+                                                const h = Math.floor(mins / 60);
+                                                const m = mins % 60;
+                                                if (h > 0) return `${h}س ${m}د`;
+                                                return `${m} دقيقة`;
+                                            };
+                                            return (
+                                                <div className="bg-slate-800 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xl border border-slate-700">
+                                                    {formatTime()}
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    }}
+                                />
+                                <Bar dataKey="minutes" radius={[6, 6, 0, 0]} maxBarSize={40}>
+                                    {chartData.map((entry, index) => (
+                                        <Cell
+                                            key={`cell-${index}`}
+                                            fill={entry.minutes > 0 ? '#6366f1' : '#e2e8f0'}
+                                        />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-100 rounded-2xl">
+                            <Clock size={32} className="mb-2 text-slate-300" />
+                            <p className="font-bold">لم تقم بتسجيل أي وقت مؤخراً</p>
+                            <p className="text-sm text-slate-400 mt-1">شغل مؤقت بومودورو للبدء!</p>
                         </div>
                     )}
                 </div>

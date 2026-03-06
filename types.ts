@@ -148,6 +148,7 @@ export interface Project {
   currentStage?: string;
   pomodoroCount?: number;
   totalSeconds?: number;
+  timeSessions?: { date: string; seconds: number }[];
   tasks: ProjectTask[];
 }
 

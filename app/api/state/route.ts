@@ -170,6 +170,7 @@ export async function GET() {
       currentStage: p.currentStage || undefined,
       pomodoroCount: p.pomodoroCount,
       totalSeconds: p.totalSeconds || 0,
+      timeSessions: p.timeSessions ? (typeof p.timeSessions === 'string' ? JSON.parse(p.timeSessions) : p.timeSessions) : [],
       tasks: p.tasks
     })),
 
@@ -457,7 +458,8 @@ export async function PUT(request: NextRequest) {
           targetGoal: project.targetGoal,
           currentStage: project.currentStage,
           pomodoroCount: project.pomodoroCount || 0,
-          totalSeconds: project.totalSeconds || 0
+          totalSeconds: project.totalSeconds || 0,
+          timeSessions: project.timeSessions || []
         },
         create: {
           id: project.id,
@@ -469,7 +471,8 @@ export async function PUT(request: NextRequest) {
           targetGoal: project.targetGoal,
           currentStage: project.currentStage,
           pomodoroCount: project.pomodoroCount || 0,
-          totalSeconds: project.totalSeconds || 0
+          totalSeconds: project.totalSeconds || 0,
+          timeSessions: project.timeSessions || []
         }
       })
 

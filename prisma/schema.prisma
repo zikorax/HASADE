@@ -170,6 +170,7 @@ model Project {
   currentStage String?
   pomodoroCount Int           @default(0)
   totalSeconds  Int           @default(0)
+  timeSessions  Json?         @default("[]")
   tasks        ProjectTask[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
