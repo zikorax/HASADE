@@ -337,6 +337,9 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
                 {activeProjects.map(project => {
                     const topTask = project.tasks.find(t => t.isTopTask && !t.completed) || project.tasks.find(t => !t.completed);
                     const daysSinceActivity = differenceInDays(new Date(), parseISO(project.lastActivity));
+                    const nonRecurringTasks = project.tasks.filter(t => !t.recurrence || t.recurrence === 'none');
+                    const completedCount = nonRecurringTasks.filter(t => t.completed).length;
+                    const computedProgress = nonRecurringTasks.length > 0 ? Math.round((completedCount / nonRecurringTasks.length) * 100) : 0;
 
                     return (
                         <div
@@ -363,12 +366,12 @@ export const ProjectsTracker: React.FC<ProjectsTrackerProps> = ({
                                 <div>
                                     <div className="flex justify-between text-[11px] font-bold text-slate-400 mb-2 uppercase tracking-widest">
                                         <span>التقدم</span>
-                                        <span className="text-indigo-600">{project.progress}%</span>
+                                        <span className="text-indigo-600">{computedProgress}%</span>
                                     </div>
                                     <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                                         <div
                                             className="h-full bg-indigo-600 rounded-full transition-all duration-1000"
-                                            style={{ width: `${project.progress}%` }}
+                                            style={{ width: `${computedProgress}%` }}
                                         />
                                     </div>
                                 </div>
@@ -595,6 +598,8 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     const [editStage, setEditStage] = useState(false)
     const [stageInput, setStageInput] = useState(project.currentStage || '')
     const [showDeleteModal, setShowDeleteModal] = useState(false)
+    const [completedPage, setCompletedPage] = useState(0)
+    const COMPLETED_PER_PAGE = 5
 
     // Editing task state
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
@@ -681,7 +686,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                             مشروع نشط
                         </span>
                         <span>•</span>
-                        <span>{project.progress}% مكتمل</span>
+                        <span>{(pendingTasks.length + completedTasks.length) > 0 ? Math.round((completedTasks.length / (pendingTasks.length + completedTasks.length)) * 100) : 0}% مكتمل</span>
                         {(project.totalSeconds || 0) > 0 && (
                             <>
                                 <span>•</span>
@@ -1083,9 +1088,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
 
                 {completedTasks.length > 0 && (
                     <div className="mt-8 pt-6 border-t border-slate-100">
-                        <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-4">مهام منجزة مؤخراً</h4>
+                        <div className="flex justify-between items-center mb-4">
+                            <h4 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">مهام منجزة ({completedTasks.length})</h4>
+                        </div>
                         <div className="space-y-2">
-                            {completedTasks.slice(-3).map(task => {
+                            {completedTasks.slice(completedPage * COMPLETED_PER_PAGE, (completedPage + 1) * COMPLETED_PER_PAGE).map(task => {
                                 let daysPassed = 0;
                                 if (task.lastCompletedDate && task.createdAt) {
                                     daysPassed = differenceInDays(new Date(task.lastCompletedDate), new Date(task.createdAt));
@@ -1106,6 +1113,29 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                 )
                             })}
                         </div>
+                        {completedTasks.length > COMPLETED_PER_PAGE && (
+                            <div className="flex items-center justify-center gap-3 mt-4 pt-3 border-t border-slate-100">
+                                <button
+                                    onClick={() => setCompletedPage(p => Math.max(0, p - 1))}
+                                    disabled={completedPage === 0}
+                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed text-slate-500 hover:text-indigo-600 hover:bg-indigo-50"
+                                >
+                                    <ChevronRight size={14} />
+                                    السابق
+                                </button>
+                                <span className="text-xs font-bold text-slate-400">
+                                    {completedPage + 1} / {Math.ceil(completedTasks.length / COMPLETED_PER_PAGE)}
+                                </span>
+                                <button
+                                    onClick={() => setCompletedPage(p => Math.min(Math.ceil(completedTasks.length / COMPLETED_PER_PAGE) - 1, p + 1))}
+                                    disabled={completedPage >= Math.ceil(completedTasks.length / COMPLETED_PER_PAGE) - 1}
+                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-all disabled:opacity-30 disabled:cursor-not-allowed text-slate-500 hover:text-indigo-600 hover:bg-indigo-50"
+                                >
+                                    التالي
+                                    <ChevronLeft size={14} />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
